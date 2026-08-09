@@ -14,10 +14,10 @@ The spec's own Appendix A checklist is written for people *implementing a client
 
 ## Skills (if used)
 
-- [ ] Skills live directly under `skills/<skill-name>/SKILL.md` — one directory level, no deeper nesting scanned
-- [ ] Each `SKILL.md` conforms to the Agent Skills specification (agentskills.io) — valid frontmatter, `name` matches folder
+- [ ] Skills live directly under `skills/<skill-name>/SKILL.md` - one directory level, no deeper nesting scanned
+- [ ] Each `SKILL.md` conforms to the Agent Skills specification (agentskills.io) - valid frontmatter, `name` matches folder
 - [ ] `description` states both what the skill does and when to use it
-- [ ] Nothing required for every invocation is buried in `scripts/`/`references/` only — and nothing rarely-needed bloats the SKILL.md body instead of living there
+- [ ] Nothing required for every invocation is buried in `scripts/`/`references/` only - and nothing rarely-needed bloats the SKILL.md body instead of living there
 
 ## MCP servers (if used)
 
@@ -25,11 +25,11 @@ The spec's own Appendix A checklist is written for people *implementing a client
 - [ ] `mcp.json`'s `$schema` version matches `plugin.json`'s `$schema` version
 - [ ] Every server has a `type` and only the fields valid for that variant
 - [ ] `stdio` servers: `command` is a single token (bare name or `./`-relative, never a shell string); bundled executables use the `./`-relative form
-- [ ] `stdio` servers: `cwd` (if set) is `./`-relative, `${PLUGIN_ROOT}[...]`, or `${PLUGIN_DATA}[...]` — nothing else
+- [ ] `stdio` servers: `cwd` (if set) is `./`-relative, `${PLUGIN_ROOT}[...]`, or `${PLUGIN_DATA}[...]` - nothing else
 - [ ] `stdio` servers: `env` has no `PLUGIN_ROOT`/`PLUGIN_DATA` keys
 - [ ] `streamable-http`/`sse` servers: `url` is absolute HTTP(S), HTTPS unless loopback, no userinfo/fragment
 - [ ] No secrets embedded in `headers` or `env` anywhere
-- [ ] At least one of `skills/` or `mcp.json` is actually present — a plugin with neither is not useful to any client
+- [ ] If the plugin is meant to supply portable components, at least one of `skills/` or `mcp.json` is present. The specification permits a plugin with neither, but it supplies no portable components.
 
 ## Client extensions (only if used)
 

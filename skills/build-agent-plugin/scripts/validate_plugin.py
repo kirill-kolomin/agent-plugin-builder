@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-validate_plugin.py — structural validator for Agent Plugins Specification v1.0.0
+validate_plugin.py - structural validator for Agent Plugins Specification v1.0.0
 (https://agent-plugins.org/specification)
 
 This is a convenience checker, not the official machine-readable schema. It
 implements the normative rules from the spec text closely enough to catch the
 mistakes plugin authors actually make. When it disagrees with the spec, the
-spec wins — see references/manifest-reference.md and references/mcp-reference.md
+spec wins - see references/manifest-reference.md and references/mcp-reference.md
 for the underlying rules, or the spec itself for the final word.
 
 Usage:
@@ -15,6 +15,7 @@ Usage:
 Exit code 0 if there are zero errors (warnings are fine). Exit code 1 otherwise.
 """
 
+import ipaddress
 import json
 import os
 import re
@@ -35,6 +36,7 @@ HTTP_ALLOWED = {"type", "url", "headers"}
 
 NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9\-.]*[a-z0-9])?$")
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
 
 class Report:
@@ -72,6 +74,17 @@ def valid_name(name):
     if "--" in name or ".." in name:
         return False
     return bool(NAME_RE.match(name))
+
+
+def is_within(path, root):
+    """Return whether a resolved package path remains contained by its root."""
+    try:
+        return (
+            os.path.commonpath((os.path.realpath(path), os.path.realpath(root)))
+            == os.path.realpath(root)
+        )
+    except ValueError:
+        return False
 
 
 def check_plugin_root(root, r: Report):
@@ -136,7 +149,7 @@ def check_plugin_root(root, r: Report):
     if "extensions" in manifest:
         ext = manifest["extensions"]
         if not isinstance(ext, dict):
-            r.warn("plugin.json 'extensions' is not an object — clients report and ignore it, non-fatal")
+            r.warn("plugin.json 'extensions' is not an object - clients report and ignore it, non-fatal")
         else:
             for ns, val in ext.items():
                 if not isinstance(val, dict):
@@ -150,7 +163,10 @@ def check_skills(root, r: Report):
     if not os.path.exists(skills_dir):
         return  # absent is fine, not an error
     if not os.path.isdir(skills_dir):
-        r.error("'skills' exists but is not a directory — skills component type is invalid")
+        r.error("'skills' exists but is not a directory - skills component type is invalid")
+        return
+    if not is_within(skills_dir, root):
+        r.error("'skills' resolves outside the plugin root - skills component type is invalid")
         return
 
     found_any = False
@@ -162,26 +178,31 @@ def check_skills(root, r: Report):
         if not os.path.isfile(skill_md):
             continue  # not a discovered skill, silently skipped per spec
         found_any = True
+        if not is_within(skill_md, root):
+            r.error(f"skills/{entry}/SKILL.md resolves outside the plugin root - skill is invalid")
+            continue
         check_skill_md(entry, skill_md, r)
 
     if not found_any:
-        r.warn("'skills/' exists but no subdirectory contains a SKILL.md — no skills will be discovered")
+        r.warn("'skills/' exists but no subdirectory contains a SKILL.md - no skills will be discovered")
 
 
 def check_skill_md(dirname, path, r: Report):
     with open(path, encoding="utf-8") as f:
         text = f.read()
 
-    if not text.startswith("---"):
+    lines = text.splitlines()
+    if not lines or lines[0] != "---":
         r.error(f"skills/{dirname}/SKILL.md must start with YAML frontmatter delimited by '---'")
         return
 
-    parts = text.split("---", 2)
-    if len(parts) < 3:
+    try:
+        closing_index = lines.index("---", 1)
+    except ValueError:
         r.error(f"skills/{dirname}/SKILL.md frontmatter is not properly closed with a second '---'")
         return
 
-    frontmatter = parts[1]
+    frontmatter = "\n".join(lines[1:closing_index])
     name_match = re.search(r"^name:\s*(.+)$", frontmatter, re.MULTILINE)
     desc_match = re.search(r"^description:\s*(.+)$", frontmatter, re.MULTILINE)
 
@@ -190,30 +211,30 @@ def check_skill_md(dirname, path, r: Report):
     else:
         skill_name = name_match.group(1).strip().strip('"\'')
         if skill_name != dirname:
-            r.warn(f"skills/{dirname}/SKILL.md name '{skill_name}' does not match its folder name '{dirname}'")
+            r.error(f"skills/{dirname}/SKILL.md name '{skill_name}' must match its folder name '{dirname}'")
         if not SKILL_NAME_RE.match(skill_name) or len(skill_name) > 64:
-            r.warn(f"skills/{dirname}/SKILL.md name '{skill_name}' may violate Agent Skills naming rules")
+            r.error(f"skills/{dirname}/SKILL.md name '{skill_name}' violates Agent Skills naming rules")
 
     if not desc_match:
         r.error(f"skills/{dirname}/SKILL.md frontmatter is missing required 'description'")
-
-    if "<" in frontmatter or ">" in frontmatter:
-        r.warn(f"skills/{dirname}/SKILL.md frontmatter contains angle brackets — avoid per Agent Skills spec")
-
+    else:
+        description = desc_match.group(1).strip().strip('"\'')
+        if not description or len(description) > 1024:
+            r.error(f"skills/{dirname}/SKILL.md description must be 1-1024 characters")
 
 def check_mcp(root, manifest, r: Report):
     mcp_path = os.path.join(root, "mcp.json")
     if not os.path.exists(mcp_path):
         return
     if not os.path.isfile(mcp_path):
-        r.error("'mcp.json' exists but is not a regular file — MCP component type is invalid")
+        r.error("'mcp.json' exists but is not a regular file - MCP component type is invalid")
         return
 
     try:
         with open(mcp_path, encoding="utf-8") as f:
             mcp = json.load(f)
     except json.JSONDecodeError as e:
-        r.error(f"mcp.json is not valid JSON: {e} — MCP disabled for this plugin")
+        r.error(f"mcp.json is not valid JSON: {e} - MCP disabled for this plugin")
         return
 
     if not isinstance(mcp, dict):
@@ -236,17 +257,17 @@ def check_mcp(root, manifest, r: Report):
         return
 
     for sname, cfg in servers.items():
-        check_server(sname, cfg, r)
+        check_server(root, sname, cfg, r)
 
 
-def check_server(name, cfg, r: Report):
+def check_server(root, name, cfg, r: Report):
     if not isinstance(cfg, dict):
         r.error(f"mcp.json server '{name}' must be an object")
         return
 
     stype = cfg.get("type")
     if stype == "stdio":
-        check_stdio_server(name, cfg, r)
+        check_stdio_server(root, name, cfg, r)
     elif stype in ("streamable-http", "sse"):
         check_http_server(name, cfg, r)
     else:
@@ -254,7 +275,7 @@ def check_server(name, cfg, r: Report):
                 "(must be 'stdio', 'streamable-http', or 'sse')")
 
 
-def check_stdio_server(name, cfg, r: Report):
+def check_stdio_server(root, name, cfg, r: Report):
     bad = set(cfg.keys()) - STDIO_ALLOWED
     if bad:
         r.error(f"mcp.json server '{name}' (stdio) has field(s) not valid for this variant: {sorted(bad)}")
@@ -263,13 +284,13 @@ def check_stdio_server(name, cfg, r: Report):
     if not isinstance(command, str) or not command:
         r.error(f"mcp.json server '{name}' (stdio) is missing required 'command'")
     else:
-        if " " in command:
-            r.warn(f"mcp.json server '{name}' command {command!r} contains a space — "
-                   "'command' must be a single executable token, not a shell string; use 'args' instead")
-        if command.startswith(".."):
-            r.error(f"mcp.json server '{name}' command {command!r} escapes the plugin root")
-        elif "/" in command and not command.startswith("./"):
-            r.warn(f"mcp.json server '{name}' command {command!r} looks like a path but doesn't start with './'")
+        if any(char.isspace() for char in command):
+            r.error(f"mcp.json server '{name}' command {command!r} must be a single executable token; use 'args' instead")
+        elif command.startswith("./"):
+            if not is_within(os.path.join(root, command), root):
+                r.error(f"mcp.json server '{name}' command {command!r} resolves outside the plugin root")
+        elif "/" in command or "\\" in command:
+            r.error(f"mcp.json server '{name}' command {command!r} must be a bare executable name or './'-relative path")
 
     if "args" in cfg:
         args = cfg["args"]
@@ -283,7 +304,7 @@ def check_stdio_server(name, cfg, r: Report):
         else:
             reserved = {"PLUGIN_ROOT", "PLUGIN_DATA"} & set(env.keys())
             if reserved:
-                r.error(f"mcp.json server '{name}' 'env' declares reserved key(s) {sorted(reserved)} — "
+                r.error(f"mcp.json server '{name}' 'env' declares reserved key(s) {sorted(reserved)} - "
                         "clients supply these themselves")
 
     if "cwd" in cfg:
@@ -299,6 +320,18 @@ def check_stdio_server(name, cfg, r: Report):
             if not valid_forms:
                 r.error(f"mcp.json server '{name}' 'cwd' {cwd!r} must be './'-relative, "
                         "'${PLUGIN_ROOT}[...]', or '${PLUGIN_DATA}[...]'")
+            else:
+                data_root = os.path.join(root, ".plugin-data-validation")
+                if cwd.startswith("./"):
+                    resolved_cwd, allowed_root = os.path.join(root, cwd), root
+                elif cwd.startswith("${PLUGIN_ROOT}"):
+                    resolved_cwd = cwd.replace("${PLUGIN_ROOT}", root, 1)
+                    allowed_root = root
+                else:
+                    resolved_cwd = cwd.replace("${PLUGIN_DATA}", data_root, 1)
+                    allowed_root = data_root
+                if not is_within(resolved_cwd, allowed_root):
+                    r.error(f"mcp.json server '{name}' 'cwd' {cwd!r} resolves outside its allowed root")
 
 
 def check_http_server(name, cfg, r: Report):
@@ -321,9 +354,12 @@ def check_http_server(name, cfg, r: Report):
         r.error(f"mcp.json server '{name}' url must not contain a fragment")
 
     host = parsed.hostname or ""
-    is_loopback = host == "localhost" or host.startswith("127.") or host == "::1"
+    try:
+        is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = host == "localhost"
     if parsed.scheme == "http" and not is_loopback:
-        r.error(f"mcp.json server '{name}' url {url!r} uses plain HTTP for a non-loopback host — must be HTTPS")
+        r.error(f"mcp.json server '{name}' url {url!r} uses plain HTTP for a non-loopback host - must be HTTPS")
 
     if "headers" in cfg:
         headers = cfg["headers"]
@@ -333,9 +369,13 @@ def check_http_server(name, cfg, r: Report):
             lower_names = [h.lower() for h in headers]
             if len(lower_names) != len(set(lower_names)):
                 r.error(f"mcp.json server '{name}' 'headers' has the same header name repeated under different casing")
-            for hv in headers.values():
+            for header_name, hv in headers.items():
+                if not HEADER_NAME_RE.match(header_name):
+                    r.error(f"mcp.json server '{name}' header name {header_name!r} is not a valid HTTP field name")
+                if "\r" in hv or "\n" in hv:
+                    r.error(f"mcp.json server '{name}' header {header_name!r} contains an invalid newline")
                 if re.search(r"(key|token|secret|password|bearer)", hv, re.IGNORECASE):
-                    r.warn(f"mcp.json server '{name}' header value looks like it may contain a secret — "
+                    r.warn(f"mcp.json server '{name}' header value looks like it may contain a secret - "
                            "headers are visible package data, not a credentials mechanism")
 
 
@@ -356,7 +396,7 @@ def main():
         has_skills = os.path.isdir(os.path.join(root, "skills"))
         has_mcp = os.path.isfile(os.path.join(root, "mcp.json"))
         if not has_skills and not has_mcp:
-            r.warn("plugin has neither 'skills/' nor 'mcp.json' — it supplies no components to any client")
+            r.warn("plugin has neither 'skills/' nor 'mcp.json' - it supplies no components to any client")
 
     r.print()
     sys.exit(0 if r.ok() else 1)

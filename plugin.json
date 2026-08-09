@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agent-plugin-builder",
   "version": "1.0.0",
-  "description": "Teaches an agent how to design, scaffold, and validate Agent Plugins (agent-plugins.org v1.0.0) — portable packages of Agent Skills and MCP servers.",
+  "description": "Teaches an agent how to design, scaffold, and validate Agent Plugins (agent-plugins.org v1.0.0) - portable packages of Agent Skills and MCP servers.",
   "author": {
     "name": "Kirill Kolomin"
   },

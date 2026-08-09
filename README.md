@@ -1,42 +1,51 @@
 # agent-plugin-builder
 
-An [Agent Plugin](https://agent-plugins.org/) (spec v1.0.0) containing one skill, `build-agent-plugin`, that teaches an agent how to design, scaffold, and validate other Agent Plugins.
+Teach your AI coding agent (Claude Code, Cursor, VS Code, Kiro, or any other [Agent Plugins](https://agent-plugins.org/)-compatible client) how to package skills and MCP servers into a portable plugin that works across all of them — instead of rebuilding the same thing for every tool.
 
-This package is itself a conformant plugin — it's the reference example as much as it is the tool.
+Once installed, just ask your agent things like:
 
-```
-agent-plugin-builder/
-├── plugin.json                      # required manifest
-├── LICENSE
-├── README.md
-└── skills/
-    └── build-agent-plugin/
-        ├── SKILL.md                 # the skill an agent loads
-        ├── scripts/
-        │   └── validate_plugin.py   # structural validator, usable on ANY plugin
-        └── references/
-            ├── manifest-reference.md
-            ├── mcp-reference.md
-            └── conformance-checklist.md
-```
+- "Package this as an agent plugin"
+- "Turn my MCP server into something Cursor and Claude Code can both load"
+- "Validate this plugin against the spec"
+- "Add an MCP server to my existing plugin"
+
+and it will scaffold the `plugin.json`, `skills/`, and `mcp.json` for you, following the spec's exact rules — plus catch mistakes with a built-in validator before you ship anything.
 
 ## Install
 
-Any Agent Plugins-compatible client can load this from a local path or a git checkout — there's no registry defined by the spec itself. For example, with the [skills CLI](https://skills.sh):
+**Using the [skills CLI](https://skills.sh):**
 
 ```bash
-npx skills add <path-or-repo> --skill build-agent-plugin
+npx skills add kirill-kolomin/agent-plugin-builder
 ```
 
-Or point your client (Claude Code, Cursor, VS Code, Kiro, etc.) at this directory directly, per that client's own plugin-loading docs.
-
-## Validate any plugin (including this one)
+**Using GitHub CLI (Copilot, other `gh skill`-compatible clients):**
 
 ```bash
-python3 skills/build-agent-plugin/scripts/validate_plugin.py <path-to-any-plugin-root>
+gh skill install kirill-kolomin/agent-plugin-builder
 ```
 
-Checks `plugin.json`, `skills/` discovery, and `mcp.json` against the normative rules in the [Agent Plugins Specification v1.0.0](https://agent-plugins.org/specification). Exit code `0` means zero errors (warnings are non-fatal by design).
+**Manually, for any client:** clone or download this repo, then point your client at it the way that client documents for loading local plugins (most read from a plugins/extensions directory or a config file listing plugin paths).
+
+## What it does
+
+Ask your agent to build or fix an agent plugin, and it will:
+
+1. Figure out whether you need a skill, an MCP server, or both
+2. Scaffold the correct directory layout (`plugin.json` at the root, `skills/<name>/SKILL.md`, `mcp.json` if needed)
+3. Fill in a valid manifest — the right `$schema`, a name that passes the spec's naming rules, and no fields the spec doesn't allow
+4. Wire up MCP servers correctly (stdio, Streamable HTTP, or SSE) with safe path handling and no secrets leaking into the config
+5. Run a validator against the result and fix anything it flags before handing the plugin back to you
+
+## Validate a plugin yourself
+
+You can also run the checker directly on any plugin — including ones you didn't build with this skill:
+
+```bash
+python3 <install-path>/skills/build-agent-plugin/scripts/validate_plugin.py <path-to-plugin>
+```
+
+It checks the manifest, skill discovery, and MCP config against the [Agent Plugins Specification v1.0.0](https://agent-plugins.org/specification) and reports every problem it finds. A clean run prints `VALID (0 errors)`.
 
 ## License
 
